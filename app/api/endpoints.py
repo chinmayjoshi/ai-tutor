@@ -73,7 +73,8 @@ class UpdateMasteryLevelRequest(BaseModel):
     topic: str
     summary_of_transcript: str
     resource_id: str
-    questions: List[Dict] = None
+    questions: List[str]
+    answers: List[str]
 
 class SubtopicsResponse(BaseModel):
     subtopics: List[Dict]
