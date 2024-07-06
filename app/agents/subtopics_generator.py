@@ -20,7 +20,8 @@ class SubtopicsGeneratorAgent:
         self.assistant = autogen.AssistantAgent(
             name="assistant",
             llm_config=self.llm_config,
-            system_message="You are a helpful assistant specialized in breaking down topics into subtopics."
+            system_message="You are a helpful assistant specialized in breaking down topics into subtopics.",
+            use_docker=False
         )
 
         self.user_proxy = autogen.UserProxyAgent(
@@ -34,7 +35,8 @@ class SubtopicsGeneratorAgent:
             1. Generate a list of upto 10 subtopics for the given main topic with each subtopic having a level attached to it (beginner/intermediate/advanced).
             2. Reflect on the generated subtopics and refine them if necessary.
             3. Provide a final, refined list of subtopics in JSON format like this: [{"subtopic": "subtopic1", "level": "beginner"}, {"subtopic": "subtopic2", "level": "intermediate"}, {"subtopic": "subtopic3", "level": "advanced"}]
-            4. End your message with 'TERMINATE'."""
+            4. End your message with 'TERMINATE'.""",
+            use_docker=False
         )
 
     def generate_subtopics(self, main_topic) -> list:
