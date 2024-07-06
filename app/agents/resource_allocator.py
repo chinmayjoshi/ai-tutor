@@ -33,20 +33,24 @@ class ResourceAllocatorAgent:
             llm_config=self.llm_config,
             system_message="""Execute the following steps:
             1. Read all the resources and then find the one that would be the most relevant for the user
-            2. Return the url and title of the resource in the json format if you find something that is relevant else return 'None'
+            2. Return the url, title and id of the resource in the json format if you find something that is relevant else return 'None'
             3. End your message with 'TERMINATE'."""
         )
 
-    def evaluate_mastery(self, resources: str, skill_level: str, topic: str) -> list:
+    def allocate_resource(self, resources: str, skill_level: str, topic: str, user: str) -> list:
+        filtered_resources = []
+        for resource in resources:
+            if user not in resource["users"]:
+                filtered_resources.append(resource)
         self.user_proxy.initiate_chat(
             self.assistant,
-            message=f"Find the most relevant resource from the list of resources: {resources} for skill level: {skill_level} and topic: {topic}"
+            message=f"Find the most relevant resource from the list of resources: {filtered_resources} for skill level: {skill_level} and topic: {topic}"
         )
         final_message = self.user_proxy.chat_messages[self.assistant][-2]["content"]
         final_message = final_message.replace("TERMINATE", "").strip()
         if "None" in final_message:
             return None
         else:
-            return final_message
+            return json.loads(final_message)
 
 resource_allocator_agent = ResourceAllocatorAgent()

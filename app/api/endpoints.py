@@ -2,6 +2,7 @@ import json
 from app.agents.subtopics_generator import subtopics_generator_agent
 from app.agents.mastery_evaluator import mastery_evaluator_agent
 from app.agents.resource_allocator import resource_allocator_agent
+from app.agents.mastery_updater import mastery_multi_evaluator_agent
 from fastapi import APIRouter, HTTPException
 from app.db.fauna_client import fauna_client
 from pydantic import BaseModel
@@ -16,6 +17,49 @@ from typing import List, Optional,Dict
 from app.api.fauna_utils import query_topic_data, store_topic_data
 
 
+def fetch_mastery_level(user: str, topic: str):
+    """
+    Fetch a user's mastery level for a topic.
+    
+    :param user: User identifier
+    :param topic: Topic name
+    :return: The mastery levels dictionary if found, None otherwise
+    """
+    try:
+        result = fauna_client.query(
+            q.get(q.match(q.index("user_topic_mastery_by_user_and_topic"), user, topic))
+        )
+        return result["data"]["mastery_levels"]
+    except FaunaError as e:
+        if "instance not found" in str(e):
+            print(f"No mastery level found for user '{user}' and topic '{topic}'")
+        else:
+            print(f"An error occurred while fetching the mastery level: {e}")
+        return {}
+
+def update_mastery_level(user: str, topic: str, updated_mastery_levels: dict):
+    """
+    Update a user's mastery level for a topic.
+    
+    :param user: User identifier
+    :param topic: Topic name
+    :param updated_mastery_levels: Updated dictionary of subtopics and their mastery levels
+    :return: True if update was successful, False otherwise
+    """
+    try:
+        fauna_client.query(
+            q.update(
+                q.select(["ref"], q.get(q.match(q.index("user_topic_mastery_by_user_and_topic"), user, topic))),
+                {"data": {"mastery_levels": updated_mastery_levels}}
+            )
+        )
+        print(f"Mastery level for user '{user}' and topic '{topic}' updated successfully.")
+        return True
+    except FaunaError as e:
+        print(f"An error occurred while updating the mastery level: {e}")
+        return False
+
+
 RESOURCES_COLLECTION = "resources"
 router = APIRouter()
 
@@ -24,11 +68,18 @@ class TopicRequest(BaseModel):
     topic: str
     subtopics: List[Dict] = None
 
+class UpdateMasteryLevelRequest(BaseModel):
+    user: str
+    topic: str
+    summary_of_transcript: str
+    resource_id: str
+    questions: List[Dict] = None
+
 class SubtopicsResponse(BaseModel):
     subtopics: List[Dict]
 
 class MasteryLevelResponse(BaseModel):
-    mastery_level: str
+    mastery_level: dict
 
 class YouTubeQuestionRequest(BaseModel):
     url: str
@@ -50,6 +101,7 @@ class FeedbackResponse(BaseModel):
 class ResourceResponse(BaseModel):
     url: str
     title: str
+    id: str
 
 def fetch_all_resources():
     try:
@@ -61,9 +113,11 @@ def fetch_all_resources():
         )
         resources = [
             {
+                "id": doc["ref"].id(),
                 "topic": doc["data"]["topic"],
                 "skill_level": doc["data"]["skill_level"],
-                "link": doc["data"]["link"]
+                "link": doc["data"]["link"],
+                "users": doc["data"].get("users", [])
             }
             for doc in results["data"]
         ]
@@ -71,12 +125,27 @@ def fetch_all_resources():
     except FaunaError as e:
         return None
 
+def update_resource_user(resource_id, user):
+    resource = fauna_client.query(
+        q.get(q.match(q.index("resource_by_id"), resource_id))
+    )
+    users = resource["data"].get("users", [])
+    users.append(user)
+    fauna_client.query(
+        q.update(
+            q.select(["ref"], q.get(q.match(q.index("resource_by_id"), resource_id))),
+            {"data": {"users": users}}
+        )
+    )
+
 @router.post("/get_subtopics", response_model=SubtopicsResponse)
 async def get_subtopics(request: TopicRequest):
     user = request.user
     topic = request.topic
-    subtopics = subtopics_generator_agent.generate_subtopics(topic)
-    store_topic_data(user, topic, subtopics)
+    subtopics = query_topic_data(user, topic)
+    if subtopics is None:
+        subtopics = subtopics_generator_agent.generate_subtopics(topic)
+        store_topic_data(user, topic, subtopics)
     return SubtopicsResponse(subtopics=subtopics)
 
 def extract_video_id(url: str) -> str:
@@ -127,7 +196,7 @@ async def get_youtube_summary_and_questions(request: YouTubeQuestionRequest):
 async def get_mastery_level(user, topic, selected_subtopics):
     generated_subtopics = query_topic_data(user, topic)
     mastery_level = mastery_evaluator_agent.evaluate_mastery(selected_subtopics, generated_subtopics)
-    return MasteryLevelResponse(mastery_level=mastery_level)
+    return mastery_level
 
 
 @router.post("/get_answer_feedback", response_model=FeedbackResponse)
@@ -142,16 +211,13 @@ async def get_answer_feedback(request: FeedbackRequest):
             max_tokens=300
         )
         
-        # Parse the GPT response
         gpt_response = json.loads(response.choices[0].message.content.strip())
-        
-        # Ensure 'improvement_suggestions' is a list
+
         if isinstance(gpt_response.get('improvement_suggestions'), str):
             gpt_response['improvement_suggestions'] = [gpt_response['improvement_suggestions']]
         elif 'improvement_suggestions' not in gpt_response:
             gpt_response['improvement_suggestions'] = []
         
-        # Create FeedbackResponse object
         feedback = FeedbackResponse(
             is_correct=gpt_response['is_correct'],
             explanation=gpt_response['explanation'],
@@ -167,8 +233,6 @@ async def get_answer_feedback(request: FeedbackRequest):
         raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
 
 
-
-
 @router.post("/get_resource", response_model=ResourceResponse)
 async def get_resource(request: TopicRequest):
     user = request.user
@@ -176,6 +240,22 @@ async def get_resource(request: TopicRequest):
     selected_subtopics = request.subtopics
     mastery_level = await get_mastery_level(user, topic, selected_subtopics)
     resources = fetch_all_resources()
-    resource = resource_allocator_agent.evaluate_mastery(resources, mastery_level, topic)
-    resource = json.loads(resource)
-    return ResourceResponse(url=resource['url'], title=resource['title'])
+    resource = resource_allocator_agent.allocate_resource(resources, mastery_level, topic, user)
+    return ResourceResponse(url=resource['url'], title=resource['title'], id=resource['id'])
+
+@router.post("/update_mastery_level", response_model=MasteryLevelResponse)
+async def update_mastery_level(request: UpdateMasteryLevelRequest):
+    user = request.user
+    topic = request.topic
+    questions = request.questions
+    answers = request.answers
+    summary = request.summary_of_transcript
+    resource_id = request.resource_id
+    questions = [{"question": question, "answer": answer} for question, answer in zip(questions, answers)]
+    update_resource_user(resource_id, user)
+    current_mastery = fetch_mastery_level(user, topic)
+    mastery_level = mastery_multi_evaluator_agent.evaluate_mastery(questions, topic, current_mastery, summary, resource_id)
+    mastery_level = json.loads(mastery_level)
+    current_mastery.update(mastery_level)
+    update_mastery_level(user, topic, current_mastery)
+    return MasteryLevelResponse(mastery_level=current_mastery)
