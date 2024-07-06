@@ -8,7 +8,8 @@ from typing import List
 from youtube_transcript_api import YouTubeTranscriptApi
 import re
 import openai
-from typing import List, Dict
+from pydantic import BaseModel
+from typing import List, Optional,Dict
 from app.api.fauna_utils import query_topic_data, store_topic_data
 
 router = APIRouter()
@@ -31,11 +32,22 @@ class YouTubeQuestionResponse(BaseModel):
     summary_of_transcript: str
     questions: List[str]
 
+class FeedbackRequest(BaseModel):
+    question: str
+    answer: str
+
+class FeedbackResponse(BaseModel):
+    is_correct: bool
+    explanation: str
+    improvement_suggestions: Optional[List[str]]
+
+
 @router.post("/get_subtopics", response_model=SubtopicsResponse)
 async def get_subtopics(request: TopicRequest):
     user = request.user
     topic = request.topic
     subtopics = subtopics_generator_agent.generate_subtopics(topic)
+    store_topic_data(user, topic, subtopics)
     return SubtopicsResponse(subtopics=subtopics)
 
 def extract_video_id(url: str) -> str:
@@ -82,9 +94,10 @@ async def get_youtube_summary_and_questions(request: YouTubeQuestionRequest):
         return YouTubeQuestionResponse(summary_of_transcript=result['summary'], questions=result['questions'])
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+    
 
-    store_topic_data(user, topic, subtopics)
-    return SubtopicsResponse(subtopics=subtopics)
+
+
 
 @router.post("/get_mastery_level", response_model=MasteryLevelResponse)
 async def get_mastery_level(request: TopicRequest):
@@ -94,3 +107,20 @@ async def get_mastery_level(request: TopicRequest):
     generated_subtopics = query_topic_data(user, topic)
     mastery_level = mastery_evaluator_agent.evaluate_mastery(selected_subtopics, generated_subtopics)
     return MasteryLevelResponse(mastery_level=mastery_level)
+
+
+@router.post("/get_answer_feedback", response_model=FeedbackResponse)
+async def get_answer_feedback(request: FeedbackRequest):
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an educational assistant that provides feedback on answers to questions. Provide your response in JSON format with 'is_correct', 'explanation', and 'improvement_suggestions' fields."},
+                {"role": "user", "content": f"Question: {request.question}\nAnswer: {request.answer}\n\nEvaluate if this answer is correct. Provide an explanation and suggestions for improvement if needed. Respond in JSON format."}
+            ],
+            max_tokens=300
+        )
+        result = json.loads(response.choices[0].message.content.strip())
+        return FeedbackResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
