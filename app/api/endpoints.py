@@ -1,16 +1,21 @@
 import json
 from app.agents.subtopics_generator import subtopics_generator_agent
 from app.agents.mastery_evaluator import mastery_evaluator_agent
+from app.agents.resource_allocator import resource_allocator_agent
 from fastapi import APIRouter, HTTPException
 from app.db.fauna_client import fauna_client
 from pydantic import BaseModel
 from typing import List
 from youtube_transcript_api import YouTubeTranscriptApi
+from faunadb import query as q
+from faunadb.errors import FaunaError
 import re
 import openai
 from typing import List, Dict
 from app.api.fauna_utils import query_topic_data, store_topic_data
 
+
+RESOURCES_COLLECTION = "resources"
 router = APIRouter()
 
 class TopicRequest(BaseModel):
@@ -30,6 +35,30 @@ class YouTubeQuestionRequest(BaseModel):
 class YouTubeQuestionResponse(BaseModel):
     summary_of_transcript: str
     questions: List[str]
+
+class ResourceResponse(BaseModel):
+    url: str
+    title: str
+
+def fetch_all_resources():
+    try:
+        results = fauna_client.query(
+            q.map_(
+                lambda x: q.get(x),
+                q.paginate(q.documents(q.collection(RESOURCES_COLLECTION)), size=100000)
+            )
+        )
+        resources = [
+            {
+                "topic": doc["data"]["topic"],
+                "skill_level": doc["data"]["skill_level"],
+                "link": doc["data"]["link"]
+            }
+            for doc in results["data"]
+        ]
+        return resources
+    except FaunaError as e:
+        return None
 
 @router.post("/get_subtopics", response_model=SubtopicsResponse)
 async def get_subtopics(request: TopicRequest):
@@ -83,14 +112,19 @@ async def get_youtube_summary_and_questions(request: YouTubeQuestionRequest):
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
-    store_topic_data(user, topic, subtopics)
-    return SubtopicsResponse(subtopics=subtopics)
-
-@router.post("/get_mastery_level", response_model=MasteryLevelResponse)
-async def get_mastery_level(request: TopicRequest):
-    user = request.user
-    topic = request.topic
-    selected_subtopics = request.subtopics
+async def get_mastery_level(user, topic, selected_subtopics):
     generated_subtopics = query_topic_data(user, topic)
     mastery_level = mastery_evaluator_agent.evaluate_mastery(selected_subtopics, generated_subtopics)
     return MasteryLevelResponse(mastery_level=mastery_level)
+
+
+@router.post("/get_resource", response_model=ResourceResponse)
+async def get_resource(request: TopicRequest):
+    user = request.user
+    topic = request.topic
+    selected_subtopics = request.subtopics
+    mastery_level = await get_mastery_level(user, topic, selected_subtopics)
+    resources = fetch_all_resources()
+    resource = resource_allocator_agent.evaluate_mastery(resources, mastery_level, topic)
+    resource = json.loads(resource)
+    return ResourceResponse(url=resource['url'], title=resource['title'])
