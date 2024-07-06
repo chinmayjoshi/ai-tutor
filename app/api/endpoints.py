@@ -115,12 +115,34 @@ async def get_answer_feedback(request: FeedbackRequest):
         response = openai.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are an educational assistant that provides feedback on answers to questions. Provide your response in JSON format with 'is_correct', 'explanation', and 'improvement_suggestions' fields."},
+                {"role": "system", "content": "You are an educational assistant that provides feedback on answers to questions. Provide your response in JSON format with 'is_correct', 'explanation', and 'improvement_suggestions' fields. The 'improvement_suggestions' should always be a list of strings, even if it's empty."},
                 {"role": "user", "content": f"Question: {request.question}\nAnswer: {request.answer}\n\nEvaluate if this answer is correct. Provide an explanation and suggestions for improvement if needed. Respond in JSON format."}
             ],
             max_tokens=300
         )
-        result = json.loads(response.choices[0].message.content.strip())
-        return FeedbackResponse(**result)
+        
+        # Parse the GPT response
+        gpt_response = json.loads(response.choices[0].message.content.strip())
+        
+        # Ensure 'improvement_suggestions' is a list
+        if isinstance(gpt_response.get('improvement_suggestions'), str):
+            gpt_response['improvement_suggestions'] = [gpt_response['improvement_suggestions']]
+        elif 'improvement_suggestions' not in gpt_response:
+            gpt_response['improvement_suggestions'] = []
+        
+        # Create FeedbackResponse object
+        feedback = FeedbackResponse(
+            is_correct=gpt_response['is_correct'],
+            explanation=gpt_response['explanation'],
+            improvement_suggestions=gpt_response['improvement_suggestions']
+        )
+        
+        return feedback
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT response: {str(e)}")
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=f"Missing required field in GPT response: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
+
+
