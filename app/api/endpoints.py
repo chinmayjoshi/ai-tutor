@@ -19,6 +19,7 @@ class YouTubeQuestionRequest(BaseModel):
     url: str
 
 class YouTubeQuestionResponse(BaseModel):
+    summary_of_transcript: str
     questions: List[str]
 
 @router.post("/get_subtopics", response_model=SubtopicsResponse)
@@ -26,11 +27,9 @@ async def get_subtopics(request: TopicRequest):
     topic = request.topic
     subtopics = subtopics_generator_agent.generate_subtopics(topic)
     subtopics = json.loads(subtopics)
-    # print(f"Generated subtopics: {type(subtopics)}")
     return SubtopicsResponse(subtopics=subtopics)
 
 def extract_video_id(url: str) -> str:
-    # Extract video ID from various YouTube URL formats
     patterns = [
         r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
         r"(?:embed\/|v\/|youtu.be\/)([0-9A-Za-z_-]{11})",
@@ -49,28 +48,28 @@ def get_transcript(video_id: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
 
-def generate_questions(transcript: str) -> List[str]:
+def generate_summary_and_questions(transcript: str) -> dict:
     try:
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that generates questions based on video transcripts."},
-                {"role": "user", "content": f"Based on the following transcript, generate 5 questions to test the viewer's understanding of the video content:\n\n{transcript}"}
+                {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts and generates questions based on the content."},
+                {"role": "user", "content": f"Based on the following transcript, provide a brief summary of the video content and generate 5 questions to test the viewer's understanding. Format your response as JSON with 'summary' and 'questions' fields. Give a json that I can directly use no trailing or leading characters\n\n{transcript}"}
             ],
-            max_tokens=300
+            max_tokens=500
         )
-        questions = response.choices[0].message.content.strip().split('\n')
-
-        return [q.strip() for q in questions if q.strip()]
+        result = response.choices[0].message.content.strip()
+        print(result)
+        return json.loads(result)  # Parse the JSON string to a Python dictionary
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate summary and questions: {str(e)}")
 
-@router.post("/get_youtube_questions", response_model=YouTubeQuestionResponse)
-async def get_youtube_questions(request: YouTubeQuestionRequest):
+@router.post("/get_youtube_summary_and_questions", response_model=YouTubeQuestionResponse)
+async def get_youtube_summary_and_questions(request: YouTubeQuestionRequest):
     try:
         video_id = extract_video_id(request.url)
         transcript = get_transcript(video_id)
-        questions = generate_questions(transcript)
-        return YouTubeQuestionResponse(questions=questions)
+        result = generate_summary_and_questions(transcript)
+        return YouTubeQuestionResponse(summary_of_transcript=result['summary'], questions=result['questions'])
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
