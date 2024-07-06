@@ -11,7 +11,8 @@ from faunadb import query as q
 from faunadb.errors import FaunaError
 import re
 import openai
-from typing import List, Dict
+from pydantic import BaseModel
+from typing import List, Optional,Dict
 from app.api.fauna_utils import query_topic_data, store_topic_data
 
 
@@ -35,6 +36,16 @@ class YouTubeQuestionRequest(BaseModel):
 class YouTubeQuestionResponse(BaseModel):
     summary_of_transcript: str
     questions: List[str]
+
+class FeedbackRequest(BaseModel):
+    question: str
+    answer: str
+
+class FeedbackResponse(BaseModel):
+    is_correct: bool
+    explanation: str
+    improvement_suggestions: Optional[List[str]]
+
 
 class ResourceResponse(BaseModel):
     url: str
@@ -65,6 +76,7 @@ async def get_subtopics(request: TopicRequest):
     user = request.user
     topic = request.topic
     subtopics = subtopics_generator_agent.generate_subtopics(topic)
+    store_topic_data(user, topic, subtopics)
     return SubtopicsResponse(subtopics=subtopics)
 
 def extract_video_id(url: str) -> str:
@@ -116,6 +128,45 @@ async def get_mastery_level(user, topic, selected_subtopics):
     generated_subtopics = query_topic_data(user, topic)
     mastery_level = mastery_evaluator_agent.evaluate_mastery(selected_subtopics, generated_subtopics)
     return MasteryLevelResponse(mastery_level=mastery_level)
+
+
+@router.post("/get_answer_feedback", response_model=FeedbackResponse)
+async def get_answer_feedback(request: FeedbackRequest):
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an educational assistant that provides feedback on answers to questions. Provide your response in JSON format with 'is_correct', 'explanation', and 'improvement_suggestions' fields. The 'improvement_suggestions' should always be a list of strings, even if it's empty."},
+                {"role": "user", "content": f"Question: {request.question}\nAnswer: {request.answer}\n\nEvaluate if this answer is correct. Provide an explanation and suggestions for improvement if needed. Respond in JSON format."}
+            ],
+            max_tokens=300
+        )
+        
+        # Parse the GPT response
+        gpt_response = json.loads(response.choices[0].message.content.strip())
+        
+        # Ensure 'improvement_suggestions' is a list
+        if isinstance(gpt_response.get('improvement_suggestions'), str):
+            gpt_response['improvement_suggestions'] = [gpt_response['improvement_suggestions']]
+        elif 'improvement_suggestions' not in gpt_response:
+            gpt_response['improvement_suggestions'] = []
+        
+        # Create FeedbackResponse object
+        feedback = FeedbackResponse(
+            is_correct=gpt_response['is_correct'],
+            explanation=gpt_response['explanation'],
+            improvement_suggestions=gpt_response['improvement_suggestions']
+        )
+        
+        return feedback
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT response: {str(e)}")
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=f"Missing required field in GPT response: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
+
+
 
 
 @router.post("/get_resource", response_model=ResourceResponse)
