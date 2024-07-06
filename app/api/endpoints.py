@@ -36,7 +36,6 @@ async def get_subtopics(request: TopicRequest):
     user = request.user
     topic = request.topic
     subtopics = subtopics_generator_agent.generate_subtopics(topic)
-    subtopics = json.loads(subtopics)
     return SubtopicsResponse(subtopics=subtopics)
 
 def extract_video_id(url: str) -> str:
