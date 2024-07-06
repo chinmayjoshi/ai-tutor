@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     FAUNA_SECRET: Optional[str] = os.getenv("FAUNA_SECRET")
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     API_V1_STR: str = "/api/v1"
-    ALLOWED_HOSTS: str = "localhost,127.0.0.1"
+    ALLOWED_HOSTS: str = "*"
 
     class Config:
         env_file = ".env"
