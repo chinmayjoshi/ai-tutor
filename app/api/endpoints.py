@@ -173,7 +173,7 @@ def generate_summary_and_questions(transcript: str) -> dict:
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts and generates questions based on the content."},
-                {"role": "user", "content": f"Based on the following transcript, provide a brief summary of the video content and generate 5 questions to test the viewer's understanding. Format your response as JSON with 'summary' and 'questions' fields. Give a json that I can directly use no trailing or leading characters\n\n{transcript}"}
+                {"role": "user", "content": f"Based on the following transcript, provide a brief summary of the video content and generate 5 questions to test the viewer's understanding. Format your response as JSON with 'summary' and 'questions' fields.  Give a json that I can directly use no trailing or leading characters. Do not have any backticks or the word json in the beginning or end. Please.\n\n{transcript}"}
             ],
             max_tokens=500
         )
