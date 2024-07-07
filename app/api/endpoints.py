@@ -17,6 +17,7 @@ from typing import List, Optional,Dict
 from app.api.fauna_utils import query_topic_data, store_topic_data
 
 
+
 def fetch_mastery_level(user: str, topic: str):
     """
     Fetch a user's mastery level for a topic.
