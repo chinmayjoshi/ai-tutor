@@ -307,10 +307,10 @@ def generate_markdown(topic: str, mastery_levels: Dict[str, str]) -> str:
     
     for subtopic, level in mastery_levels.items():
         emoji = {
-            "BEGINNER": "🟢",
-            "INTERMEDIATE": "🟡",
-            "ADVANCED": "🔴",
-        }.get(level.upper(), "⚪")
+            "BEGINNER": "🐣",
+            "INTERMEDIATE": "🦋",
+            "ADVANCED": "🚀",
+        }.get(level.upper(), "🌱")
         
         markdown += f"| {subtopic} | {emoji} {level.capitalize()} |\n"
     
