@@ -291,3 +291,35 @@ async def update_mastery_level(request: UpdateMasteryLevelRequest):
     current_mastery.update(mastery_level)
     update_or_create_mastery_level(user, topic, current_mastery)
     return MasteryLevelResponse(mastery_level=current_mastery)
+
+class MasteryLevelRequest(BaseModel):
+    user: str
+    topic: str
+    mastery_levels: Dict[str, str]
+
+class MasteryLevelMarkdownResponse(BaseModel):
+    markdown: str
+
+def generate_markdown(topic: str, mastery_levels: Dict[str, str]) -> str:
+    markdown = f"# Mastery Levels for {topic}\n\n"
+    markdown += "| Subtopic | Mastery Level |\n"
+    markdown += "|----------|---------------|\n"
+    
+    for subtopic, level in mastery_levels.items():
+        emoji = {
+            "BEGINNER": "🟢",
+            "INTERMEDIATE": "🟡",
+            "ADVANCED": "🔴",
+        }.get(level.upper(), "⚪")
+        
+        markdown += f"| {subtopic} | {emoji} {level.capitalize()} |\n"
+    
+    return markdown
+
+@router.post("/get_mastery_level_markdown", response_model=MasteryLevelMarkdownResponse)
+async def get_mastery_level_markdown(request: MasteryLevelRequest):
+    try:
+        markdown = generate_markdown(request.topic, request.mastery_levels)
+        return MasteryLevelMarkdownResponse(markdown=markdown)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate markdown: {str(e)}")
