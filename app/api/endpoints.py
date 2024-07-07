@@ -301,3 +301,57 @@ async def get_mastery_level_markdown(request: MasteryLevelRequest):
         return MasteryLevelMarkdownResponse(markdown=markdown)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate markdown: {str(e)}")
+    
+class FakeThoughtsRequest(BaseModel):
+    user: str
+    topic: str
+    summary_of_transcript: str
+    resource_id: str
+    questions: List[str]
+    answers: List[str]
+
+class FakeThoughtsResponse(BaseModel):
+    thoughts: str
+
+@router.post("/fake_thoughts", response_model=FakeThoughtsResponse)
+async def fake_thoughts(request: FakeThoughtsRequest):
+    try:
+        # Prepare the input for GPT
+        questions_and_answers = [
+            f"Question: {q}\nAnswer: {a}" 
+            for q, a in zip(request.questions, request.answers)
+        ]
+        qa_text = "\n\n".join(questions_and_answers)
+        
+        prompt = f"""
+        As a tutor, analyze the following information and generate thoughts about the student's performance:
+
+        Topic: {request.topic}
+        Summary of the learning material: {request.summary_of_transcript}
+
+        Questions and Answers:
+        {qa_text}
+
+        Based on this information, provide thoughts on the student's performance, areas that need improvement, and any other relevant insights. Format your response as a JSON string with a single key 'thoughts'
+        Structure it like its an ongoing thought chain ending with , based on this let me find the right resource for you. Keep overall thing within 3-4 sentences .
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an insightful tutor providing feedback on a student's performance."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300
+        )
+        
+        result = json.loads(response.choices[0].message.content.strip())
+        return FakeThoughtsResponse(thoughts=result['thoughts'])
+    
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT response: {str(e)}")
+    except KeyError as e:
+        raise HTTPException(status_code=500, detail=f"Missing required field in GPT response: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate fake thoughts: {str(e)}")
+
