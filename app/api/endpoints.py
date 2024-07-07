@@ -37,26 +37,49 @@ def fetch_mastery_level(user: str, topic: str):
             print(f"An error occurred while fetching the mastery level: {e}")
         return {}
 
-def update_mastery_level(user: str, topic: str, updated_mastery_levels: dict):
+from faunadb import query as q
+from faunadb.errors import FaunaError
+
+def update_or_create_mastery_level(user: str, topic: str, updated_mastery_levels: dict):
     """
-    Update a user's mastery level for a topic.
+    Update a user's mastery level for a topic or create a new entry if it doesn't exist.
     
     :param user: User identifier
     :param topic: Topic name
     :param updated_mastery_levels: Updated dictionary of subtopics and their mastery levels
-    :return: True if update was successful, False otherwise
+    :return: True if update/creation was successful, False otherwise
     """
     try:
-        fauna_client.query(
-            q.update(
-                q.select(["ref"], q.get(q.match(q.index("user_topic_mastery_by_user_and_topic"), user, topic))),
-                {"data": {"mastery_levels": updated_mastery_levels}}
+        result = fauna_client.query(
+            q.let(
+                {
+                    "match": q.match(q.index("user_topic_mastery_by_user_and_topic"), user, topic)
+                },
+                q.if_(
+                    q.exists(q.var("match")),
+                    # If the entry exists, update it
+                    q.update(
+                        q.select(["ref"], q.get(q.var("match"))),
+                        {"data": {"mastery_levels": updated_mastery_levels}}
+                    ),
+                    # If the entry doesn't exist, create a new one
+                    q.create(
+                        q.collection("user_topic_mastery"),
+                        {
+                            "data": {
+                                "user": user,
+                                "topic": topic,
+                                "mastery_levels": updated_mastery_levels
+                            }
+                        }
+                    )
+                )
             )
         )
-        print(f"Mastery level for user '{user}' and topic '{topic}' updated successfully.")
+        print(f"Mastery level for user '{user}' and topic '{topic}' updated or created successfully.")
         return True
     except FaunaError as e:
-        print(f"An error occurred while updating the mastery level: {e}")
+        print(f"An error occurred while updating or creating the mastery level: {e}")
         return False
 
 
@@ -129,7 +152,7 @@ def fetch_all_resources():
 def update_resource_user(resource_id, user):
     # Fetch the resource document directly using its ID
     resource = fauna_client.query(
-        q.get(q.ref(q.collection("mastery"), resource_id))
+        q.get(q.ref(q.collection(RESOURCES_COLLECTION), resource_id))
     )
     
     # Get the current users or initialize an empty list
@@ -141,7 +164,7 @@ def update_resource_user(resource_id, user):
     # Update the document
     fauna_client.query(
         q.update(
-            q.ref(q.collection("mastery"), resource_id),
+            q.ref(q.collection(RESOURCES_COLLECTION), resource_id),
             {"data": {"users": users}}
         )
     )
@@ -264,10 +287,9 @@ async def update_mastery_level(request: UpdateMasteryLevelRequest):
     questions = [{"question": question, "answer": answer} for question, answer in zip(questions, answers)]
     update_resource_user(resource_id, user)
     current_mastery = fetch_mastery_level(user, topic)
-    mastery_level = mastery_multi_evaluator_agent.evaluate_mastery(questions, topic, current_mastery, summary, resource_id)
-    mastery_level = json.loads(mastery_level)
+    mastery_level = mastery_multi_evaluator_agent.evaluate_mastery(questions, topic, summary, current_mastery, resource_id)
     current_mastery.update(mastery_level)
-    update_mastery_level(user, topic, current_mastery)
+    update_or_create_mastery_level(user, topic, current_mastery)
     return MasteryLevelResponse(mastery_level=current_mastery)
 
 class MasteryLevelRequest(BaseModel):
@@ -285,10 +307,10 @@ def generate_markdown(topic: str, mastery_levels: Dict[str, str]) -> str:
     
     for subtopic, level in mastery_levels.items():
         emoji = {
-            "BEGINNER": "🟢",
-            "INTERMEDIATE": "🟡",
-            "ADVANCED": "🔴",
-        }.get(level.upper(), "⚪")
+            "BEGINNER": "🐣",
+            "INTERMEDIATE": "🦋",
+            "ADVANCED": "🚀",
+        }.get(level.upper(), "🌱")
         
         markdown += f"| {subtopic} | {emoji} {level.capitalize()} |\n"
     
