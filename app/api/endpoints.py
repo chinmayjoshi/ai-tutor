@@ -202,18 +202,24 @@ def get_transcript(video_id: str) -> str:
 def generate_summary_and_questions(transcript: str) -> dict:
     try:
         response = openai.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts and generates questions based on the content."},
-                {"role": "user", "content": f"Based on the following transcript, provide a brief summary of the video content and generate 5 questions to test the viewer's understanding. Format your response as JSON with 'summary' and 'questions' fields.  Give a json that I can directly use no trailing or leading characters. Do not have any backticks or the word json in the beginning or end. Please.\n\n{transcript}"}
+                {"role": "user", "content": f"Based on the following transcript, provide a brief summary of the video content and generate 5 questions to test the viewer's understanding. Format your response as JSON with 'summary' and 'questions' fields. Give a JSON that I can directly use with no trailing or leading characters. Do not have any backticks or the word json in the beginning or end.\n\n{transcript}"}
             ],
             max_tokens=500
         )
         result = response.choices[0].message.content.strip()
-        print(result)
-        return json.loads(result)  # Parse the JSON string to a Python dictionary
+        
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, use the backup formatter
+            return backup_json_formatter(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate summary and questions: {str(e)}")
+
+
 
 @router.post("/get_youtube_summary_and_questions", response_model=YouTubeQuestionResponse)
 async def get_youtube_summary_and_questions(request: YouTubeQuestionRequest):
@@ -263,6 +269,30 @@ async def get_answer_feedback(request: FeedbackRequest):
         raise HTTPException(status_code=500, detail=f"Missing required field in GPT response: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
+
+def backup_json_formatter(original_response: str) -> dict:
+    try:
+        prompt = f"""
+        The following response should be formatted as JSON with 'summary' and 'questions' fields, but it may have formatting issues:
+
+        {original_response}
+
+        Please correct any formatting issues and return a valid JSON object with 'summary' and 'questions' fields. The 'questions' field should be a list of strings.
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that corrects JSON formatting."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500
+        )
+        
+        corrected_json = json.loads(response.choices[0].message.content.strip())
+        return corrected_json
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to correct JSON formatting: {str(e)}")
 
 
 @router.post("/get_resource", response_model=ResourceResponse)
