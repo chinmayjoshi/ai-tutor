@@ -127,17 +127,25 @@ def fetch_all_resources():
         return None
 
 def update_resource_user(resource_id, user):
+    # Fetch the resource document directly using its ID
     resource = fauna_client.query(
-        q.get(q.match(q.index("resource_by_id"), resource_id))
+        q.get(q.ref(q.collection("mastery"), resource_id))
     )
+    
+    # Get the current users or initialize an empty list
     users = resource["data"].get("users", [])
+    
+    # Append the new user
     users.append(user)
+    
+    # Update the document
     fauna_client.query(
         q.update(
-            q.select(["ref"], q.get(q.match(q.index("resource_by_id"), resource_id))),
+            q.ref(q.collection("mastery"), resource_id),
             {"data": {"users": users}}
         )
     )
+
 
 @router.post("/get_subtopics", response_model=SubtopicsResponse)
 async def get_subtopics(request: TopicRequest):
@@ -241,6 +249,7 @@ async def get_resource(request: TopicRequest):
     selected_subtopics = request.subtopics
     mastery_level = await get_mastery_level(user, topic, selected_subtopics)
     resources = fetch_all_resources()
+    print(resources)
     resource = resource_allocator_agent.allocate_resource(resources, mastery_level, topic, user)
     return ResourceResponse(url=resource['url'], title=resource['title'], id=resource['id'])
 

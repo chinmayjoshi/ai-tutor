@@ -6,7 +6,7 @@ class ResourceAllocatorAgent:
     def __init__(self):
         self.config_list = [
             {
-                'model': 'gpt-3.5-turbo',
+                'model': 'gpt-4o',
                 'api_key': settings.OPENAI_API_KEY,
             }
         ]
