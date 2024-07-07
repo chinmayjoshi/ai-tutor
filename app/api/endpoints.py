@@ -308,8 +308,7 @@ def backup_feedback_formatter(original_response: str) -> dict:
 def backup_json_formatter(original_response: str) -> dict:
     try:
         prompt = f"""
-        The following response should be formatted as JSON with 'summary' and 'questions' fields, but it may have formatting issues:
-
+        Fix the json formatting:
         {original_response}
 
         Please correct any formatting issues and return a valid JSON object with 'summary' and 'questions' fields. The 'questions' field should be a list of strings.
@@ -399,8 +398,8 @@ class FakeThoughtsRequest(BaseModel):
 class FakeThoughtsResponse(BaseModel):
     thoughts: str
 
-@router.post("/fake_thoughts", response_model=FakeThoughtsResponse)
-async def fake_thoughts(request: FakeThoughtsRequest):
+@router.post("/thought", response_model=FakeThoughtsResponse)
+async def thoughts(request: FakeThoughtsRequest):
     try:
         # Prepare the input for GPT
         questions_and_answers = [
