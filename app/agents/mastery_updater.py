@@ -34,7 +34,8 @@ class MasteryMultiEvaluatorAgent:
             system_message="""Execute the following steps:
             1. Analyze the given questions and student responses for each subtopic.
             2. Evaluate the mastery level of the student for each subtopic based on their responses.
-            3. Generate a mastery level for each subtopic from one of these: "beginner", "intermediate", or "advanced".
+            3. From the summary and questions create a list of subtopics covered in the quiz then evaluate the student from this list of subtopics.
+            3. Generate a mastery level for each subtopic () from one of these: "beginner", "intermediate", or "advanced".
             4. Provide a brief explanation for each evaluation.
             5. Format your response as a JSON string with the following structure:
                {
@@ -42,10 +43,11 @@ class MasteryMultiEvaluatorAgent:
                  "subtopic2": {"level": "beginner|intermediate|advanced", "explanation": "brief explanation"},
                  ...
                }
+            6. Check if the json schema is correct or not. If not correct then fix it and then TERMINATE
             6. End your message with 'TERMINATE'."""
         )
 
-    def evaluate_mastery(self, questions_and_responses, topic, summary):
+    def evaluate_mastery(self, questions_and_responses, topic, summary, current_mastery, resource_id):
         """
         Evaluate the mastery level of a student based on their responses to questions.
 
@@ -56,7 +58,7 @@ class MasteryMultiEvaluatorAgent:
         input_message = json.dumps(questions_and_responses, indent=2)
         self.user_proxy.initiate_chat(
             self.assistant,
-            message=f"Evaluate the student's mastery dict for {topic}: {summary} based on these questions and responses:\n{input_message}\n"
+            message=f"Evaluate and update the student's mastery dict (current mastery {current_mastery}) for {topic}: {summary} based on these questions and responses:\n{input_message}\n"
         )
         
         final_message = self.user_proxy.chat_messages[self.assistant][-2]["content"]
@@ -67,6 +69,7 @@ class MasteryMultiEvaluatorAgent:
             return mastery_dict
         except json.JSONDecodeError:
             print("Error: Could not parse the assistant's response as JSON.")
+
             return {}
 
 mastery_multi_evaluator_agent = MasteryMultiEvaluatorAgent()
