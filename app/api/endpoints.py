@@ -241,7 +241,7 @@ async def get_mastery_level(user, topic, selected_subtopics):
 async def get_answer_feedback(request: FeedbackRequest):
     try:
         response = openai.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an educational assistant that provides feedback on answers to questions. Provide your response in JSON format with 'is_correct', 'explanation', and 'improvement_suggestions' fields. The 'improvement_suggestions' should always be a list of strings, even if it's empty."},
                 {"role": "user", "content": f"Question: {request.question}\nAnswer: {request.answer}\n\nEvaluate if this answer is correct. Provide an explanation and suggestions for improvement if needed. Respond in JSON format."}
@@ -249,8 +249,13 @@ async def get_answer_feedback(request: FeedbackRequest):
             max_tokens=300
         )
         
-        gpt_response = json.loads(response.choices[0].message.content.strip())
+        try:
+            gpt_response = json.loads(response.choices[0].message.content.strip())
+        except json.JSONDecodeError:
+            # If JSON parsing fails, use the backup formatter
+            gpt_response = backup_feedback_formatter(response.choices[0].message.content.strip())
 
+        # Ensure improvement_suggestions is always a list
         if isinstance(gpt_response.get('improvement_suggestions'), str):
             gpt_response['improvement_suggestions'] = [gpt_response['improvement_suggestions']]
         elif 'improvement_suggestions' not in gpt_response:
@@ -263,12 +268,42 @@ async def get_answer_feedback(request: FeedbackRequest):
         )
         
         return feedback
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT response: {str(e)}")
     except KeyError as e:
         raise HTTPException(status_code=500, detail=f"Missing required field in GPT response: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate feedback: {str(e)}")
+
+
+    
+def backup_feedback_formatter(original_response: str) -> dict:
+    try:
+        prompt = f"""
+        The following response should be formatted as JSON with 'is_correct', 'explanation', and 'improvement_suggestions' fields.
+        However, it may have formatting issues:
+
+        {original_response}
+
+        Please correct any formatting issues and return a valid JSON object with the expected fields.
+        The 'is_correct' field should be a boolean.
+        The 'explanation' field should be a string.
+        The 'improvement_suggestions' field should always be a list of strings, even if it's empty.
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that corrects JSON formatting for educational feedback."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500
+        )
+        
+        corrected_json = json.loads(response.choices[0].message.content.strip())
+        return corrected_json
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to correct feedback JSON formatting: {str(e)}")
+
+
 
 def backup_json_formatter(original_response: str) -> dict:
     try:
