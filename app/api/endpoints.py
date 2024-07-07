@@ -310,7 +310,6 @@ def backup_json_formatter(original_response: str) -> dict:
         prompt = f"""
         Fix the json formatting:
         {original_response}
-
         Please correct any formatting issues and return a valid JSON object with 'summary' and 'questions' fields. The 'questions' field should be a list of strings.
         """
 
@@ -326,6 +325,7 @@ def backup_json_formatter(original_response: str) -> dict:
         corrected_json = json.loads(response.choices[0].message.content.strip())
         return corrected_json
     except Exception as e:
+        return backup_json_formatter(original_response)
         raise HTTPException(status_code=500, detail=f"Failed to correct JSON formatting: {str(e)}")
 
 
