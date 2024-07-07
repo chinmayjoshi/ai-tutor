@@ -47,7 +47,7 @@ class ResourceAllocatorAgent:
             message=f"Find the most relevant resource from the list of resources: {filtered_resources} for skill level: {skill_level} and topic: {topic}"
         )
         final_message = self.user_proxy.chat_messages[self.assistant][-2]["content"]
-        final_message = final_message.replace("TERMINATE", "").strip()
+        final_message = final_message.replace("TERMINATE", "").replace("```json", "").replace("```", "").strip()
         if "None" in final_message:
             return None
         else:
