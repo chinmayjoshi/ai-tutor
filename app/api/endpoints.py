@@ -302,7 +302,6 @@ async def get_resource(request: TopicRequest):
     selected_subtopics = request.subtopics
     mastery_level = await get_mastery_level(user, topic, selected_subtopics)
     resources = fetch_all_resources()
-    print(resources)
     resource = resource_allocator_agent.allocate_resource(resources, mastery_level, topic, user)
     return ResourceResponse(url=resource['url'], title=resource['title'], id=resource['id'])
 

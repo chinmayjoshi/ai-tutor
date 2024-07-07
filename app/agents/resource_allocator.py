@@ -33,7 +33,7 @@ class ResourceAllocatorAgent:
             llm_config=self.llm_config,
             system_message="""Execute the following steps:
             1. Read all the resources and then find the one that would be the most relevant for the user
-            2. Return the url, title and id of the resource in the json format if you find something that is relevant else return 'None'
+            2. Return the url, title and id of the resource in the json format if you find something that is relevant (find the resource which is closely related)
             3. End your message with 'TERMINATE'."""
         )
 
